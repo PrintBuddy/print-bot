@@ -33,7 +33,6 @@ fi
 echo "🐳 Starting new container..."
 docker run -d \
   --name $CONTAINER_NAME \
-  --env-file .env \
   --restart unless-stopped \
   $IMAGE_NAME
 
