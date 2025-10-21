@@ -29,11 +29,6 @@ if [ "$(docker ps -a -q -f name=$CONTAINER_NAME)" ]; then
     docker rm $CONTAINER_NAME
 fi
 
-# Cargar variables de entorno desde .env (opcional)
-if [ -f .env ]; then
-    export $(grep -v '^#' .env | xargs)
-fi
-
 # Ejecutar el nuevo contenedor
 echo "🐳 Starting new container..."
 docker run -d \
