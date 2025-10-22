@@ -1,0 +1,32 @@
+# Archivos de entorno
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+
+# Archivos de Python / entorno virtual
+venv
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Logs o temporales
+*.log
+*.tmp
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
+
+# Control de versiones
+.git
+.gitignore
+
+# Cachés
+pip-wheel-metadata
+*.egg-info
+build/
+dist/
+.cache

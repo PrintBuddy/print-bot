@@ -14,6 +14,9 @@ def get_users(chat_id: int):
 
 def get_me(chat_id: int):
     url = f"{API_BASE_URL}/telegram/me"
+
+    print(url)
+
     try:
         res = requests.get(url, json={"chat_id": str(chat_id)}, timeout=API_TIMEOUT)
         return res.status_code, res.json()
