@@ -154,12 +154,13 @@ class BotHandlers:
                     await message.reply_text("No users found.")
                 return
 
-            msg_lines = ["📋 Users list:"]
+            msg_lines = []
             for u in res:
                 msg_lines.append(f"{u.get('name')} {u.get('surname')} ({u.get('username')})")
             message = getattr(update, "message", None)
             if message is not None:
                 msg_lines.sort()
+                msg_lines.insert(0, "👥 Users:\n")
                 await message.reply_text("\n".join(msg_lines))
         elif status_code == 403:
             await update.message.reply_text("❌ You are not authorized to view users.")
