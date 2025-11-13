@@ -159,7 +159,7 @@ class BotHandlers:
                 msg_lines.append(f"{u.get('name')} {u.get('surname')} ({u.get('username')})")
             message = getattr(update, "message", None)
             if message is not None:
-                msg_lines.sort()
+                msg_lines.sort(key=lambda x: x.lower())
                 msg_lines.insert(0, "👥 Users:\n")
                 await message.reply_text("\n".join(msg_lines))
         elif status_code == 403:
