@@ -87,6 +87,29 @@ class APIClient:
         payload = {"chat_id": str(chat_id), "username": username, "amount": amount}
         return self._patch("/telegram/balance-adjust", json=payload)
 
+    def create_recharge_request(
+        self,
+        chat_id: int,
+        username: str,
+        amount: float,
+        telegram_username: str | None = None,
+        telegram_first_name: str | None = None,
+        telegram_last_name: str | None = None,
+    ):
+        payload = {
+            "chat_id": str(chat_id),
+            "username": username,
+            "amount": amount,
+            "telegram_username": telegram_username,
+            "telegram_first_name": telegram_first_name,
+            "telegram_last_name": telegram_last_name,
+        }
+        return self._post("/telegram/recharge-requests", json=payload)
+
+    def resolve_recharge_request(self, chat_id: int, request_id: str, action: str):
+        payload = {"chat_id": str(chat_id), "action": action}
+        return self._patch(f"/telegram/recharge-requests/{request_id}", json=payload)
+
     def close(self):
         try:
             self._session.close()

@@ -44,6 +44,7 @@ class BotApp:
             BotCommand("user", "Get user info by username"),
             BotCommand("recharge", "Recharge a user's balance"),
             BotCommand("adjust", "Adjust a user's balance"),
+            BotCommand("request_recharge", "Request a balance recharge"),
         ]
         try:
             await app.bot.set_my_commands(commands)
@@ -75,6 +76,7 @@ class BotApp:
         self._app.add_handler(CommandHandler("user", handlers.get_user_info))
         self._app.add_handler(CommandHandler("recharge", handlers.recharge))
         self._app.add_handler(CommandHandler("adjust", handlers.adjust))
+        self._app.add_handler(CommandHandler("request_recharge", handlers.request_recharge))
         self._app.add_handler(CallbackQueryHandler(handlers.button_callback))
 
         # Global error handler: handle timeouts specially and log unexpected errors
