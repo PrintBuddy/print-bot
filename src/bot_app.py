@@ -35,15 +35,10 @@ class BotApp:
         self.shutdown_timeout = getattr(cfg, "SHUTDOWN_TIMEOUT", 10)
 
     async def _setup_commands(self, app: Application):
-        # default command registration
+        # Keep the global menu minimal; chat-specific menus are set after /start.
         commands = [
             BotCommand("start", "Start the bot and check your access"),
             BotCommand("myid", "Show your Telegram chat ID"),
-            BotCommand("generate", "Generate a voucher (admins only)"),
-            BotCommand("users", "List all users (admins only)"),
-            BotCommand("user", "Get user info by username"),
-            BotCommand("recharge", "Recharge a user's balance"),
-            BotCommand("adjust", "Adjust a user's balance"),
             BotCommand("request_recharge", "Request a balance recharge"),
         ]
         try:
