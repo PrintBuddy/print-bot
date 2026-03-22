@@ -55,6 +55,10 @@ class UserService:
             self.logger.warning("Invalid recharge amount: %s by chat_id=%s", amount, chat_id)
             return 400, {"detail": "Amount must be a number"}
 
+        if a <= 0:
+            self.logger.warning("Non-positive recharge amount: %s by chat_id=%s", amount, chat_id)
+            return 400, {"detail": "Amount must be positive"}
+
         status, res = self.client.recharge_user(chat_id, username, a)
         self.logger.info("recharge chat_id=%s username=%s amount=%s status=%s", chat_id, username, a, status)
         return status, res
@@ -68,6 +72,47 @@ class UserService:
 
         status, res = self.client.adjust_balance(chat_id, username, a)
         self.logger.info("adjust chat_id=%s username=%s amount=%s status=%s", chat_id, username, a, status)
+        return status, res
+
+    def request_recharge(
+        self,
+        chat_id: int,
+        username: str,
+        amount,
+        telegram_username: str | None = None,
+        telegram_first_name: str | None = None,
+        telegram_last_name: str | None = None,
+    ) -> Tuple[int, dict]:
+        try:
+            a = float(amount)
+        except Exception:
+            self.logger.warning("Invalid recharge request amount: %s by chat_id=%s", amount, chat_id)
+            return 400, {"detail": "Amount must be a number"}
+
+        if a <= 0:
+            self.logger.warning("Non-positive recharge request amount: %s by chat_id=%s", amount, chat_id)
+            return 400, {"detail": "Amount must be positive"}
+
+        status, res = self.client.create_recharge_request(
+            chat_id,
+            username,
+            a,
+            telegram_username=telegram_username,
+            telegram_first_name=telegram_first_name,
+            telegram_last_name=telegram_last_name,
+        )
+        self.logger.info("request_recharge chat_id=%s username=%s amount=%s status=%s", chat_id, username, a, status)
+        return status, res
+
+    def resolve_recharge_request(self, chat_id: int, request_id: str, action: str) -> Tuple[int, dict]:
+        status, res = self.client.resolve_recharge_request(chat_id, request_id, action)
+        self.logger.info(
+            "resolve_recharge_request chat_id=%s request_id=%s action=%s status=%s",
+            chat_id,
+            request_id,
+            action,
+            status,
+        )
         return status, res
 
 
