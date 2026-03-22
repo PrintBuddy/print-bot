@@ -1,4 +1,4 @@
-from telegram import InlineKeyboardMarkup, InlineKeyboardButton, Update
+from telegram import BotCommand, BotCommandScopeChat, InlineKeyboardMarkup, InlineKeyboardButton, Update
 from telegram.ext import ContextTypes
 
 from .services import create_services
@@ -15,6 +15,35 @@ class BotHandlers:
         self.logger = logger or LOGGER_MANAGER.get_logger(self.__class__.__name__)
         self.cfg = get_config()
         self.recharge_request_notifications = {}
+
+    def _admin_commands(self) -> list[BotCommand]:
+        return [
+            BotCommand("start", "Start the bot and check your access"),
+            BotCommand("myid", "Show your Telegram chat ID"),
+            BotCommand("generate", "Generate a voucher"),
+            BotCommand("users", "List all users"),
+            BotCommand("user", "Get user info by username"),
+            BotCommand("recharge", "Recharge a user's balance"),
+            BotCommand("adjust", "Adjust a user's balance"),
+            BotCommand("request_recharge", "Request a balance recharge"),
+        ]
+
+    def _user_commands(self) -> list[BotCommand]:
+        return [
+            BotCommand("start", "Start the bot and check your access"),
+            BotCommand("myid", "Show your Telegram chat ID"),
+            BotCommand("request_recharge", "Request a balance recharge"),
+        ]
+
+    async def _set_chat_commands(self, context: ContextTypes.DEFAULT_TYPE, chat_id: int | None, is_admin: bool):
+        if chat_id is None:
+            return
+
+        commands = self._admin_commands() if is_admin else self._user_commands()
+        try:
+            await context.bot.set_my_commands(commands, scope=BotCommandScopeChat(chat_id=chat_id))
+        except Exception:
+            self.logger.exception("Failed to set chat-specific commands for chat_id=%s", chat_id)
 
     def _format_telegram_identity(self, user) -> str:
         if user is None:
@@ -164,33 +193,42 @@ class BotHandlers:
         usage_text = None
 
         if status_code == 200:
+            await self._set_chat_commands(context, chat_id, is_admin=True)
             name = user_res.get("name") or "Admin"
             # HTML-formatted top part (no angle-bracket placeholders here)
             msg_html = (
-                f"✅ <b>Welcome {name}!</b>\n\n"
-                "Here are your available commands:\n\n"
-                "ℹ️ <b>General:</b>\n"
+                f"🖨️👋 <b>Welcome back, {name}!</b>\n\n"
+                "This is your PrintBuddy admin assistant for managing user balances and vouchers directly from Telegram.\n\n"
+                "✨ <b>Available commands</b>\n\n"
+                "🆔 <b>General</b>\n"
                 "/myid – Show your Telegram chat ID\n\n"
 
-                "📘 <b>User Commands:</b>\n"
+                "👥 <b>Users</b>\n"
                 "/users – List all users\n"
                 "/user &lt;username&gt; – Show user info\n\n"
                 
-                "💰 <b>Voucher & Balance:</b>\n"
+                "💳 <b>Balance & Vouchers</b>\n"
                 "/generate &lt;amount&gt; – Generate a voucher\n"
                 "/recharge &lt;username&gt; &lt;amount&gt; – Add credit to a user\n"
-                "/adjust &lt;username&gt; &lt;new_balance&gt; – Set user balance manually\n"
+                "/adjust &lt;username&gt; &lt;new_balance&gt; – Set a user balance manually\n\n"
+
+                "📩 <b>Recharge Requests</b>\n"
+                "Users can send recharge requests here, and you can approve or reject them directly from the bot."
             )
 
         elif status_code == 403:
+            await self._set_chat_commands(context, chat_id, is_admin=False)
             msg = (
-                "You are not an authorized admin.\n\n"
-                "Available commands:\n"
-                "/myid - Show your Telegram chat ID\n"
-                "/request_recharge <username> <amount> - Ask admins for a recharge"
+                "🖨️👋 Welcome to PrintBuddy!\n\n"
+                "💳 This bot helps you request a balance recharge for your printing account.\n"
+                "📩 Your request will be sent directly to the admins on Telegram for review.\n\n"
+                "✨ Available commands:\n"
+                "/myid - Show your Telegram chat ID 🆔\n"
+                "/request_recharge <username> <amount> - Ask the admins for a recharge 💶"
             )
             keyboard = None
         else:
+            await self._set_chat_commands(context, chat_id, is_admin=False)
             msg = (
                 f"⚠️ Error: {user_res.get('detail', 'Unknown error')}\n\n"
                 "You can still use /myid and /request_recharge <username> <amount>."
