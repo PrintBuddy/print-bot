@@ -1,3 +1,5 @@
+from html import escape
+
 from telegram import BotCommand, BotCommandScopeChat, InlineKeyboardMarkup, InlineKeyboardButton, Update
 from telegram.ext import ContextTypes
 
@@ -60,6 +62,9 @@ class BotHandlers:
             return name
         return f"chat_id={getattr(user, 'id', 'unknown')}"
 
+    def _escape_html(self, value) -> str:
+        return escape(str(value or ""))
+
     def _build_admin_request_text(self, payload: dict) -> str:
         request = payload.get("request", {})
         user_name = payload.get("user_name", "")
@@ -74,13 +79,20 @@ class BotHandlers:
         if request.get("requester_telegram_username"):
             telegram_bits.append(f"@{request['requester_telegram_username']}")
         telegram_identity = " ".join(bit for bit in telegram_bits if bit).strip() or request.get("requester_chat_id")
+        message = request.get("message")
 
-        return (
-            "🔔 <b>New Recharge Request</b>\n\n"
-            f"👤 <b>User:</b> {user_name} {user_surname} (@{request.get('username')})\n"
-            f"💶 <b>Amount:</b> {float(request.get('amount', 0)):.2f}€\n"
-            f"💬 <b>Requested via Telegram by:</b> {telegram_identity}"
-        )
+        lines = [
+            "🔔 <b>New Recharge Request</b>",
+            "",
+            f"👤 <b>User:</b> {self._escape_html(user_name)} {self._escape_html(user_surname)} "
+            f"(@{self._escape_html(request.get('username'))})",
+            f"💶 <b>Amount:</b> {float(request.get('amount', 0)):.2f}€",
+            f"💬 <b>Requested via Telegram by:</b> {self._escape_html(telegram_identity)}",
+        ]
+        if message:
+            lines.append(f"📝 <b>Message:</b> {self._escape_html(message)}")
+
+        return "\n".join(lines)
 
     def _build_request_buttons(self, request_id: str) -> InlineKeyboardMarkup:
         return InlineKeyboardMarkup(
@@ -105,10 +117,11 @@ class BotHandlers:
 
         return (
             f"{header}\n\n"
-            f"👤 <b>User:</b> {payload.get('user_name')} {payload.get('user_surname')} (@{request.get('username')})\n"
+            f"👤 <b>User:</b> {self._escape_html(payload.get('user_name'))} {self._escape_html(payload.get('user_surname'))} "
+            f"(@{self._escape_html(request.get('username'))})\n"
             f"💶 <b>Amount:</b> {float(request.get('amount', 0)):.2f}€\n"
             f"📌 <b>Result:</b> {result}\n"
-            f"🛠️ <b>Handled by:</b> {resolved_by}"
+            f"🛠️ <b>Handled by:</b> {self._escape_html(resolved_by)}"
         )
 
     async def _notify_admins_of_request(self, context: ContextTypes.DEFAULT_TYPE, payload: dict):
@@ -224,7 +237,7 @@ class BotHandlers:
                 "📩 Your request will be sent directly to the admins on Telegram for review.\n\n"
                 "✨ Available commands:\n"
                 "/myid - Show your Telegram chat ID 🆔\n"
-                "/request_recharge <username> <amount> - Ask the admins for a recharge 💶"
+                "/request_recharge <username> <amount> [message] - Ask the admins for a recharge 💶"
             )
             keyboard = None
         else:
@@ -379,18 +392,20 @@ class BotHandlers:
         chat = getattr(update, "effective_chat", None)
         chat_id = getattr(chat, "id", None)
         args = getattr(context, "args", None) or []
-        if len(args) != 2:
+        if len(args) < 2:
             message = getattr(update, "message", None)
             if message is not None:
-                await message.reply_text("Usage: /request_recharge <username> <amount>")
+                await message.reply_text("Usage: /request_recharge <username> <amount> [message]")
             return
 
         username = args[0]
+        request_message = " ".join(args[2:]).strip() or None
         telegram_user = getattr(update, "effective_user", None)
         status_code, res = self.user_service.request_recharge(
             chat_id,
             username,
             args[1],
+            message=request_message,
             telegram_username=getattr(telegram_user, "username", None),
             telegram_first_name=getattr(telegram_user, "first_name", None),
             telegram_last_name=getattr(telegram_user, "last_name", None),
@@ -399,10 +414,15 @@ class BotHandlers:
         if status_code == 201:
             await self._notify_admins_of_request(context, res)
             requester_identity = self._format_telegram_identity(telegram_user)
-            await update.message.reply_text(
+            confirmation = (
                 f"✅ Recharge request sent for {username} with {float(args[1]):.2f}€.\n"
                 f"Admins have been notified.\n"
                 f"Sent as: {requester_identity}"
+            )
+            if request_message:
+                confirmation += f"\nMessage: {request_message}"
+            await update.message.reply_text(
+                confirmation
             )
         elif status_code == 400:
             await update.message.reply_text(f"❌ {res.get('detail', 'Invalid amount')}")
