@@ -1,5 +1,4 @@
 from typing import Optional, Callable
-import signal
 import asyncio
 import logging
 
@@ -52,7 +51,7 @@ class BotApp:
 
         self.logger.info("Building Telegram Application")
 
-        builder = Application.builder().token(self.token)
+        builder = Application.builder().token(self.token).concurrent_updates(True)
         # if a post_init was provided, use it; otherwise use the internal commands setup
         if self.post_init is not None:
             builder = builder.post_init(self.post_init)
@@ -66,7 +65,6 @@ class BotApp:
 
         self._app.add_handler(CommandHandler("start", handlers.start))
         self._app.add_handler(CommandHandler("myid", handlers.myid))
-        self._app.add_handler(CommandHandler("generate", handlers.generate))
         self._app.add_handler(CommandHandler("users", handlers.list_users))
         self._app.add_handler(CommandHandler("user", handlers.get_user_info))
         self._app.add_handler(CommandHandler("recharge", handlers.recharge))

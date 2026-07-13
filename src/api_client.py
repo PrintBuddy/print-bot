@@ -1,36 +1,33 @@
-import requests
-from requests.adapters import HTTPAdapter
-from requests.exceptions import RequestException
-from urllib3.util.retry import Retry
+import asyncio
+import httpx
 from typing import Optional, Tuple
 from .logger import get_logger
 
 logger = get_logger(__name__)
 
+_RETRY_STATUS = (500, 502, 503, 504)
+
 
 class APIClient:
-    """HTTP client for the backend API with retries, timeout and safe JSON parsing.
+    """Async HTTP client for the backend API with retries, timeout and safe JSON parsing.
 
     Methods mirror the previous `api.py` functions and return (status_code, dict-like).
     """
 
-    def __init__(self, base_url: str, timeout: int = 5, retries: int = 3, backoff: float = 0.3):
+    def __init__(self, base_url: str, secret: str, timeout: int = 5, retries: int = 3, backoff: float = 0.3):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
-        self._session = requests.Session()
-        retry = Retry(
-            total=retries,
-            read=retries,
-            connect=retries,
-            backoff_factor=backoff,
-            status_forcelist=(500, 502, 503, 504),
-            allowed_methods=["GET", "POST", "PATCH"],
+        self.retries = retries
+        self.backoff = backoff
+        # Every backend /telegram/* route requires this shared secret — the
+        # chat_id in each request body only identifies who's calling, it
+        # doesn't prove the call actually came from this bot.
+        self._client = httpx.AsyncClient(
+            headers={"X-Telegram-Secret": secret},
+            timeout=timeout,
         )
-        adapter = HTTPAdapter(max_retries=retry)
-        self._session.mount("http://", adapter)
-        self._session.mount("https://", adapter)
 
-    def _safe_json(self, res: requests.Response):
+    def _safe_json(self, res: httpx.Response):
         try:
             return res.json()
         except Exception:
@@ -39,55 +36,57 @@ class APIClient:
             except Exception:
                 return {"detail": "Invalid response from server"}
 
-    def _get(self, path: str, json: Optional[dict] = None) -> Tuple[int, dict]:
+    async def _request(self, method: str, path: str, json: Optional[dict] = None) -> Tuple[int, dict]:
         url = f"{self.base_url}{path}"
-        try:
-            res = self._session.get(url, json=json, timeout=self.timeout)
-            return res.status_code, self._safe_json(res)
-        except RequestException:
-            logger.exception("GET %s failed", url)
-            return 503, {"detail": "Could not reach the server. Please try again later."}
+        attempt = 0
+        while True:
+            try:
+                res = await self._client.request(method, url, json=json)
+            except httpx.RequestError:
+                if attempt >= self.retries:
+                    logger.exception("%s %s failed after %d retries", method, url, attempt)
+                    return 503, {"detail": "Could not reach the server. Please try again later."}
+                await asyncio.sleep(self.backoff * (2 ** attempt))
+                attempt += 1
+                continue
 
-    def _post(self, path: str, json: Optional[dict] = None) -> Tuple[int, dict]:
-        url = f"{self.base_url}{path}"
-        try:
-            res = self._session.post(url, json=json, timeout=self.timeout)
-            return res.status_code, self._safe_json(res)
-        except RequestException:
-            logger.exception("POST %s failed", url)
-            return 503, {"detail": "Could not reach the server. Please try again later."}
+            if res.status_code in _RETRY_STATUS and attempt < self.retries:
+                await asyncio.sleep(self.backoff * (2 ** attempt))
+                attempt += 1
+                continue
 
-    def _patch(self, path: str, json: Optional[dict] = None) -> Tuple[int, dict]:
-        url = f"{self.base_url}{path}"
-        try:
-            res = self._session.patch(url, json=json, timeout=self.timeout)
-            return res.status_code, self._safe_json(res) if res.content else {}
-        except RequestException:
-            logger.exception("PATCH %s failed", url)
-            return 503, {"detail": "Could not reach the server. Please try again later."}
+            if method == "PATCH":
+                return res.status_code, (self._safe_json(res) if res.content else {})
+            return res.status_code, self._safe_json(res)
+
+    async def _get(self, path: str, json: Optional[dict] = None) -> Tuple[int, dict]:
+        return await self._request("GET", path, json)
+
+    async def _post(self, path: str, json: Optional[dict] = None) -> Tuple[int, dict]:
+        return await self._request("POST", path, json)
+
+    async def _patch(self, path: str, json: Optional[dict] = None) -> Tuple[int, dict]:
+        return await self._request("PATCH", path, json)
 
     # Public API methods
-    def get_users(self, chat_id: int):
-        return self._get("/telegram/users", json={"chat_id": str(chat_id)})
+    async def get_users(self, chat_id: int):
+        return await self._get("/telegram/users", json={"chat_id": str(chat_id)})
 
-    def get_me(self, chat_id: int):
-        return self._get("/telegram/me", json={"chat_id": str(chat_id)})
+    async def get_me(self, chat_id: int):
+        return await self._get("/telegram/me", json={"chat_id": str(chat_id)})
 
-    def generate_voucher(self, chat_id: int, amount: float):
-        return self._post("/telegram/generate-voucher", json={"chat_id": str(chat_id), "amount": amount})
+    async def get_user(self, chat_id: int, username: str):
+        return await self._get(f"/telegram/user/{username}", json={"chat_id": str(chat_id)})
 
-    def get_user(self, chat_id: int, username: str):
-        return self._get(f"/telegram/user/{username}", json={"chat_id": str(chat_id)})
-
-    def recharge_user(self, chat_id: int, username: str, amount: float):
+    async def recharge_user(self, chat_id: int, username: str, amount: float):
         payload = {"chat_id": str(chat_id), "username": username, "amount": amount}
-        return self._patch("/telegram/recharge", json=payload)
+        return await self._patch("/telegram/recharge", json=payload)
 
-    def adjust_balance(self, chat_id: int, username: str, amount: float):
+    async def adjust_balance(self, chat_id: int, username: str, amount: float):
         payload = {"chat_id": str(chat_id), "username": username, "amount": amount}
-        return self._patch("/telegram/balance-adjust", json=payload)
+        return await self._patch("/telegram/balance-adjust", json=payload)
 
-    def create_recharge_request(
+    async def create_recharge_request(
         self,
         chat_id: int,
         username: str,
@@ -106,14 +105,14 @@ class APIClient:
             "telegram_first_name": telegram_first_name,
             "telegram_last_name": telegram_last_name,
         }
-        return self._post("/telegram/recharge-requests", json=payload)
+        return await self._post("/telegram/recharge-requests", json=payload)
 
-    def resolve_recharge_request(self, chat_id: int, request_id: str, action: str):
+    async def resolve_recharge_request(self, chat_id: int, request_id: str, action: str):
         payload = {"chat_id": str(chat_id), "action": action}
-        return self._patch(f"/telegram/recharge-requests/{request_id}", json=payload)
+        return await self._patch(f"/telegram/recharge-requests/{request_id}", json=payload)
 
-    def close(self):
+    async def close(self):
         try:
-            self._session.close()
+            await self._client.aclose()
         except Exception:
             pass
