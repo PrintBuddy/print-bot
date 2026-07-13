@@ -1,0 +1,8 @@
+[flake8]
+max-line-length = 140
+exclude = venv,__pycache__
+# W191: config.py uses tabs while the rest of the codebase uses spaces —
+# a pre-existing inconsistency, not reformatted here.
+# W391/W292: pre-existing trailing-newline nits, same reasoning as the
+# backend's .flake8.
+extend-ignore = W191,W391,W292

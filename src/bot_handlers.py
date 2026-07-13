@@ -1,6 +1,6 @@
 from html import escape
 
-from telegram import BotCommand, BotCommandScopeChat, InlineKeyboardMarkup, InlineKeyboardButton, Update
+from telegram import BotCommand, BotCommandScopeChat, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
 
 from .services import create_services
@@ -12,7 +12,6 @@ from .utilities import safe_handler
 class BotHandlers:
     def __init__(self, services=None, logger=None):
         self.services = services or create_services()
-        self.voucher_service = self.services["voucher"]
         self.user_service = self.services["user"]
         self.logger = logger or LOGGER_MANAGER.get_logger(self.__class__.__name__)
         self.cfg = get_config()
@@ -22,7 +21,6 @@ class BotHandlers:
         return [
             BotCommand("start", "Start the bot and check your access"),
             BotCommand("myid", "Show your Telegram chat ID"),
-            BotCommand("generate", "Generate a voucher"),
             BotCommand("users", "List all users"),
             BotCommand("user", "Get user info by username"),
             BotCommand("recharge", "Recharge a user's balance"),
@@ -191,19 +189,11 @@ class BotHandlers:
     async def start(self, update, context: ContextTypes.DEFAULT_TYPE):
         chat = getattr(update, "effective_chat", None)
         chat_id = getattr(chat, "id", None)
-        status_code, user_res = self.user_service.get_me(chat_id)
+        status_code, user_res = await self.user_service.get_me(chat_id)
 
-        buttons = [
-            [InlineKeyboardButton("Generate 1€ voucher", callback_data="gen_1")],
-            [InlineKeyboardButton("Generate 2€ voucher", callback_data="gen_2")],
-            [InlineKeyboardButton("Generate 5€ voucher", callback_data="gen_5")],
-            [InlineKeyboardButton("Generate 10€ voucher", callback_data="gen_10")]
-        ]
-        keyboard = InlineKeyboardMarkup(buttons)
-
+        keyboard = None
         msg = None
         msg_html = None
-        usage_text = None
 
         if status_code == 200:
             await self._set_chat_commands(context, chat_id, is_admin=True)
@@ -211,7 +201,7 @@ class BotHandlers:
             # HTML-formatted top part (no angle-bracket placeholders here)
             msg_html = (
                 f"🖨️👋 <b>Welcome back, {name}!</b>\n\n"
-                "This is your PrintBuddy admin assistant for managing user balances and vouchers directly from Telegram.\n\n"
+                "This is your PrintBuddy admin assistant for managing user balances directly from Telegram.\n\n"
                 "✨ <b>Available commands</b>\n\n"
                 "🆔 <b>General</b>\n"
                 "/myid – Show your Telegram chat ID\n\n"
@@ -219,9 +209,8 @@ class BotHandlers:
                 "👥 <b>Users</b>\n"
                 "/users – List all users\n"
                 "/user &lt;username&gt; – Show user info\n\n"
-                
-                "💳 <b>Balance & Vouchers</b>\n"
-                "/generate &lt;amount&gt; – Generate a voucher\n"
+
+                "💳 <b>Balance</b>\n"
                 "/recharge &lt;username&gt; &lt;amount&gt; – Add credit to a user\n"
                 "/adjust &lt;username&gt; &lt;new_balance&gt; – Set a user balance manually\n\n"
 
@@ -258,30 +247,6 @@ class BotHandlers:
                 await message.reply_text(msg, reply_markup=keyboard)
 
     @safe_handler
-    async def generate(self, update, context: ContextTypes.DEFAULT_TYPE):
-        chat = getattr(update, "effective_chat", None)
-        chat_id = getattr(chat, "id", None)
-        args = getattr(context, "args", None) or []
-        if len(args) != 1:
-            message = getattr(update, "message", None)
-            if message is not None:
-                await message.reply_text("Usage: /generate <amount>")
-            return
-
-        status_code, res = self.voucher_service.generate(chat_id, args[0])
-
-        if status_code == 200:
-            message = getattr(update, "message", None)
-            if message is not None:
-                await message.reply_text(f"✅ Voucher generated: {res.get('code')}")
-        elif status_code == 400:
-            await update.message.reply_text("❌ Amount must be a positive number")
-        elif status_code == 403:
-            await update.message.reply_text("❌ You are not authorized to generate vouchers")
-        else:
-            await update.message.reply_text(f"⚠️ Error: {res.get('detail', 'Unknown error')}")
-
-    @safe_handler
     async def myid(self, update, context: ContextTypes.DEFAULT_TYPE):
         chat = getattr(update, "effective_chat", None)
         chat_id = getattr(chat, "id", None)
@@ -308,7 +273,7 @@ class BotHandlers:
 
             action = parts[1]
             request_id = parts[2]
-            status_code, res = self.user_service.resolve_recharge_request(chat_id, request_id, action)
+            status_code, res = await self.user_service.resolve_recharge_request(chat_id, request_id, action)
 
             if status_code == 200:
                 await self._mark_request_messages_resolved(context, res)
@@ -343,29 +308,14 @@ class BotHandlers:
                     pass
             return
 
-        try:
-            amount = float(data.split("_")[1]) if data else None
-        except Exception:
-            if msg is not None:
-                await msg.reply_text("❌ Invalid button data")
-            return
-
-        status_code, res = self.voucher_service.generate(chat_id, amount)
-        if status_code == 200:
-            if msg is not None:
-                await msg.reply_text(f"✅ Voucher generated: {res.get('code')}")
-        elif status_code == 403:
-            if msg is not None:
-                await msg.reply_text("❌ You are not authorized to generate vouchers")
-        else:
-            if msg is not None:
-                await msg.reply_text(f"⚠️ Error: {res.get('detail', 'Unknown error')}")
+        if msg is not None:
+            await msg.reply_text("❌ Unknown button action.")
 
     @safe_handler
     async def list_users(self, update, context: ContextTypes.DEFAULT_TYPE):
         chat = getattr(update, "effective_chat", None)
         chat_id = getattr(chat, "id", None)
-        status_code, res = self.user_service.list_users(chat_id)
+        status_code, res = await self.user_service.list_users(chat_id)
 
         if status_code == 200:
             if not res:
@@ -401,7 +351,7 @@ class BotHandlers:
         username = args[0]
         request_message = " ".join(args[2:]).strip() or None
         telegram_user = getattr(update, "effective_user", None)
-        status_code, res = self.user_service.request_recharge(
+        status_code, res = await self.user_service.request_recharge(
             chat_id,
             username,
             args[1],
@@ -443,7 +393,7 @@ class BotHandlers:
             return
 
         username = args[0]
-        status_code, res = self.user_service.get_user(chat_id, username)
+        status_code, res = await self.user_service.get_user(chat_id, username)
 
         if status_code == 200:
             msg = (
@@ -474,7 +424,7 @@ class BotHandlers:
             return
 
         username = args[0]
-        status_code, res = self.user_service.recharge(chat_id, username, args[1])
+        status_code, res = await self.user_service.recharge(chat_id, username, args[1])
 
         if status_code == 200:
             message = getattr(update, "message", None)
@@ -499,7 +449,7 @@ class BotHandlers:
             return
 
         username = args[0]
-        status_code, res = self.user_service.adjust(chat_id, username, args[1])
+        status_code, res = await self.user_service.adjust(chat_id, username, args[1])
 
         if status_code == 200:
             name = res.get("name") or username

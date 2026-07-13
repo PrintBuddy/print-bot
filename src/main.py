@@ -1,5 +1,5 @@
 from .logger import setup_logging, get_logger
-from .config import TELEGRAM_TOKEN
+from .config import get_config
 from .bot_app import BotApp
 import sys
 
@@ -11,8 +11,10 @@ def main():
     # Setup logging
     setup_logging()
 
-    if not TELEGRAM_TOKEN:
-        logger.error("TELEGRAM_TOKEN not configured. Exiting.")
+    try:
+        get_config().validate()
+    except ValueError as e:
+        logger.error(f"Invalid configuration: {e}. Exiting.")
         sys.exit(1)
 
     # Build and run using BotApp
