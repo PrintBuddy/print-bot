@@ -31,9 +31,11 @@ class APIClient:
         try:
             return res.json()
         except Exception:
+            logger.exception("Failed to parse JSON response from %s", res.url)
             try:
                 return {"detail": res.text}
             except Exception:
+                logger.exception("Failed to read response text from %s", res.url)
                 return {"detail": "Invalid response from server"}
 
     async def _request(self, method: str, path: str, json: Optional[dict] = None) -> Tuple[int, dict]:
@@ -115,4 +117,4 @@ class APIClient:
         try:
             await self._client.aclose()
         except Exception:
-            pass
+            logger.exception("Failed to close the HTTP client cleanly")

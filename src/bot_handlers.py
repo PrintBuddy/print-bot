@@ -281,17 +281,17 @@ class BotHandlers:
                 try:
                     await query.answer(f"Request {action}d", show_alert=False)
                 except Exception:
-                    pass
+                    self.logger.exception("Failed to answer callback query for request %s", request_id)
             elif status_code == 403:
                 try:
                     await query.answer("You are not authorized to do that.", show_alert=True)
                 except Exception:
-                    pass
+                    self.logger.exception("Failed to answer callback query for request %s", request_id)
             elif status_code == 404:
                 try:
                     await query.answer("Recharge request not found.", show_alert=True)
                 except Exception:
-                    pass
+                    self.logger.exception("Failed to answer callback query for request %s", request_id)
             elif status_code == 409:
                 detail = res.get("detail", "Request already resolved.")
                 resolved_by = res.get("resolved_by_username")
@@ -300,12 +300,12 @@ class BotHandlers:
                 try:
                     await query.answer(detail, show_alert=True)
                 except Exception:
-                    pass
+                    self.logger.exception("Failed to answer callback query for request %s", request_id)
             else:
                 try:
                     await query.answer(res.get("detail", "Unknown error"), show_alert=True)
                 except Exception:
-                    pass
+                    self.logger.exception("Failed to answer callback query for request %s", request_id)
             return
 
         if msg is not None:
