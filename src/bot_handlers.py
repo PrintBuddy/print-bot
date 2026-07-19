@@ -145,12 +145,25 @@ class BotHandlers:
             self.recharge_request_notifications[request_id] = notifications
 
     async def _mark_request_messages_resolved(self, context: ContextTypes.DEFAULT_TYPE, payload: dict):
-        request_id = payload.get("request", {}).get("id")
+        request = payload.get("request", {})
+        request_id = request.get("id")
         if not request_id:
             return
 
         text = self._build_resolution_text(payload)
         notifications = self.recharge_request_notifications.pop(request_id, [])
+
+        # Requests created from the web app were never announced by this
+        # bot process (the backend messaged the target admin directly), so
+        # they're never in the in-memory map above — but the backend
+        # persists the one message it sent on the request row itself,
+        # which survives a bot restart unlike the in-memory map.
+        if not notifications and request.get("notified_chat_id") and request.get("notified_message_id"):
+            notifications = [{
+                "chat_id": int(request["notified_chat_id"]),
+                "message_id": request["notified_message_id"],
+            }]
+
         for notification in notifications:
             try:
                 await context.bot.edit_message_text(
