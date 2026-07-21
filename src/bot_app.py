@@ -3,12 +3,31 @@ import asyncio
 import logging
 
 from telegram import BotCommand
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    CallbackQueryHandler,
+    ConversationHandler,
+    MessageHandler,
+    filters,
+)
 
 from .config import get_config
 from .logger import get_logger
 from .services import create_services
-from .bot_handlers import BotHandlers
+from .bot_handlers import (
+    BotHandlers,
+    STOCK_CHOOSE_ITEM,
+    STOCK_ADJUST_DELTA,
+    EXPENSE_CHOOSE_CATEGORY,
+    EXPENSE_AWAIT_AMOUNT,
+    EXPENSE_AWAIT_DESCRIPTION,
+    EXPENSE_CONFIRM,
+    RECHARGE_SEARCH,
+    RECHARGE_AWAIT_AMOUNT,
+    ADJUST_SEARCH,
+    ADJUST_AWAIT_AMOUNT,
+)
 
 
 class BotApp:
@@ -67,10 +86,100 @@ class BotApp:
         self._app.add_handler(CommandHandler("myid", handlers.myid))
         self._app.add_handler(CommandHandler("users", handlers.list_users))
         self._app.add_handler(CommandHandler("user", handlers.get_user_info))
-        self._app.add_handler(CommandHandler("recharge", handlers.recharge))
-        self._app.add_handler(CommandHandler("adjust", handlers.adjust))
         self._app.add_handler(CommandHandler("request_recharge", handlers.request_recharge))
-        self._app.add_handler(CallbackQueryHandler(handlers.button_callback))
+
+        # Guided, button-driven flows — one-shot command args still work as
+        # a fallback (see each entry point), but the default path is
+        # buttons + prompts rather than memorized command syntax.
+        stock_conv = ConversationHandler(
+            entry_points=[CommandHandler("stock", handlers.stock_entry)],
+            states={
+                STOCK_CHOOSE_ITEM: [
+                    CallbackQueryHandler(handlers.stock_choose_item, pattern="^stock:item:"),
+                    CallbackQueryHandler(handlers.stock_cancel, pattern="^stock:cancel$"),
+                ],
+                STOCK_ADJUST_DELTA: [
+                    CallbackQueryHandler(handlers.stock_step, pattern="^stock:step:"),
+                    CallbackQueryHandler(handlers.stock_confirm, pattern="^stock:confirm$"),
+                    CallbackQueryHandler(handlers.stock_cancel, pattern="^stock:cancel$"),
+                ],
+            },
+            fallbacks=[
+                CallbackQueryHandler(handlers.stock_cancel, pattern="^stock:cancel$"),
+                CommandHandler("cancel", handlers.cancel_command),
+            ],
+            conversation_timeout=300,
+        )
+        expense_conv = ConversationHandler(
+            entry_points=[CommandHandler("expense", handlers.expense_entry)],
+            states={
+                EXPENSE_CHOOSE_CATEGORY: [
+                    CallbackQueryHandler(handlers.expense_choose_category, pattern="^expense:cat:"),
+                    CallbackQueryHandler(handlers.expense_cancel, pattern="^expense:cancel$"),
+                ],
+                EXPENSE_AWAIT_AMOUNT: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.expense_receive_amount),
+                ],
+                EXPENSE_AWAIT_DESCRIPTION: [
+                    CallbackQueryHandler(handlers.expense_skip_description, pattern="^expense:skip_desc$"),
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.expense_receive_description),
+                ],
+                EXPENSE_CONFIRM: [
+                    CallbackQueryHandler(handlers.expense_confirm, pattern="^expense:confirm$"),
+                    CallbackQueryHandler(handlers.expense_cancel, pattern="^expense:cancel$"),
+                ],
+            },
+            fallbacks=[
+                CallbackQueryHandler(handlers.expense_cancel, pattern="^expense:cancel$"),
+                CommandHandler("cancel", handlers.cancel_command),
+            ],
+            conversation_timeout=300,
+        )
+        recharge_conv = ConversationHandler(
+            entry_points=[CommandHandler("recharge", handlers.recharge_entry)],
+            states={
+                RECHARGE_SEARCH: [
+                    CallbackQueryHandler(handlers.recharge_choose_user, pattern="^recharge:user:"),
+                    CallbackQueryHandler(handlers.recharge_cancel, pattern="^recharge:cancel$"),
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.recharge_search),
+                ],
+                RECHARGE_AWAIT_AMOUNT: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.recharge_receive_amount),
+                ],
+            },
+            fallbacks=[
+                CallbackQueryHandler(handlers.recharge_cancel, pattern="^recharge:cancel$"),
+                CommandHandler("cancel", handlers.cancel_command),
+            ],
+            conversation_timeout=300,
+        )
+        adjust_conv = ConversationHandler(
+            entry_points=[CommandHandler("adjust", handlers.adjust_entry)],
+            states={
+                ADJUST_SEARCH: [
+                    CallbackQueryHandler(handlers.adjust_choose_user, pattern="^adjust:user:"),
+                    CallbackQueryHandler(handlers.adjust_cancel, pattern="^adjust:cancel$"),
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.adjust_search),
+                ],
+                ADJUST_AWAIT_AMOUNT: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.adjust_receive_amount),
+                ],
+            },
+            fallbacks=[
+                CallbackQueryHandler(handlers.adjust_cancel, pattern="^adjust:cancel$"),
+                CommandHandler("cancel", handlers.cancel_command),
+            ],
+            conversation_timeout=300,
+        )
+
+        self._app.add_handler(stock_conv)
+        self._app.add_handler(expense_conv)
+        self._app.add_handler(recharge_conv)
+        self._app.add_handler(adjust_conv)
+
+        # Restricted to the prefixes it actually handles now that stock:/
+        # expense: callbacks are routed by the ConversationHandlers above.
+        self._app.add_handler(CallbackQueryHandler(handlers.button_callback, pattern="^(rr|pp):"))
 
         # Global error handler: handle timeouts specially and log unexpected errors
         async def _global_error_handler(update, context):

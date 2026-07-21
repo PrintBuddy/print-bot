@@ -33,6 +33,18 @@ class FakeAPIClient:
     async def resolve_recharge_request(self, chat_id, request_id, action):
         return await self._record("resolve_recharge_request", chat_id, request_id, action)
 
+    async def resolve_product_purchase(self, chat_id, purchase_id, action):
+        return await self._record("resolve_product_purchase", chat_id, purchase_id, action)
+
+    async def get_inventory(self, chat_id):
+        return await self._record("get_inventory", chat_id)
+
+    async def adjust_stock(self, chat_id, item_name, delta):
+        return await self._record("adjust_stock", chat_id, item_name, delta)
+
+    async def create_expense(self, chat_id, category, amount, description=None):
+        return await self._record("create_expense", chat_id, category, amount, description)
+
 
 @pytest.fixture
 def fake_client():

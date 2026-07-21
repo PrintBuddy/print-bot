@@ -113,6 +113,21 @@ class APIClient:
         payload = {"chat_id": str(chat_id), "action": action}
         return await self._patch(f"/telegram/recharge-requests/{request_id}", json=payload)
 
+    async def resolve_product_purchase(self, chat_id: int, purchase_id: str, action: str):
+        payload = {"chat_id": str(chat_id), "action": action}
+        return await self._patch(f"/telegram/product-purchases/{purchase_id}", json=payload)
+
+    async def get_inventory(self, chat_id: int):
+        return await self._get("/telegram/inventory", json={"chat_id": str(chat_id)})
+
+    async def adjust_stock(self, chat_id: int, item_name: str, delta: float):
+        payload = {"chat_id": str(chat_id), "item_name": item_name, "delta": delta}
+        return await self._patch("/telegram/stock-adjust", json=payload)
+
+    async def create_expense(self, chat_id: int, category: str, amount: float, description: str | None = None):
+        payload = {"chat_id": str(chat_id), "category": category, "amount": amount, "description": description}
+        return await self._post("/telegram/expenses", json=payload)
+
     async def close(self):
         try:
             await self._client.aclose()
