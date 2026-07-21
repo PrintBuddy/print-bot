@@ -637,7 +637,10 @@ class BotHandlers:
                 )
         return next_state
 
-    async def _prompt_for_amount(self, update, context: ContextTypes.DEFAULT_TYPE, user: dict, prefix: str, prompt_text: str, next_state, *, edit: bool):
+    async def _prompt_for_amount(
+        self, update, context: ContextTypes.DEFAULT_TYPE, user: dict, prefix: str,
+        prompt_text: str, next_state, *, edit: bool,
+    ):
         context.chat_data[f"{prefix}_target"] = user
         if edit:
             query = getattr(update, "callback_query", None)
