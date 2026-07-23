@@ -5,6 +5,29 @@ from .logger import LOGGER_MANAGER
 from .config import get_config
 
 
+EXPENSE_CATEGORIES = ("toner", "paper", "maintenance", "other")
+
+
+def validate_expense_input(category, amount) -> Tuple[bool, str, float, Optional[str]]:
+    """Shared by UserService.create_expense (before hitting the backend)
+    and the bot's /expense entry point (before showing the confirm
+    screen for the one-shot fallback form) — one source of truth for
+    what counts as a valid expense."""
+    normalized_category = str(category).strip().lower()
+    if normalized_category not in EXPENSE_CATEGORIES:
+        return False, normalized_category, 0.0, f"Category must be one of: {', '.join(EXPENSE_CATEGORIES)}"
+
+    try:
+        a = float(amount)
+    except Exception:
+        return False, normalized_category, 0.0, "Amount must be a number"
+
+    if a <= 0:
+        return False, normalized_category, 0.0, "Amount must be positive"
+
+    return True, normalized_category, a, None
+
+
 class UserService:
     def __init__(self, client: APIClient, logger=None):
         self.client = client
@@ -95,6 +118,53 @@ class UserService:
             request_id,
             action,
             status,
+        )
+        return status, res
+
+    async def resolve_product_purchase(self, chat_id: int, purchase_id: str, action: str) -> Tuple[int, dict]:
+        status, res = await self.client.resolve_product_purchase(chat_id, purchase_id, action)
+        self.logger.info(
+            "resolve_product_purchase chat_id=%s purchase_id=%s action=%s status=%s",
+            chat_id,
+            purchase_id,
+            action,
+            status,
+        )
+        return status, res
+
+    async def list_inventory(self, chat_id: int) -> Tuple[int, Union[list, dict, Any]]:
+        status, res = await self.client.get_inventory(chat_id)
+        self.logger.info("list_inventory chat_id=%s status=%s", chat_id, status)
+        return status, res
+
+    async def adjust_stock(self, chat_id: int, item_name: str, delta) -> Tuple[int, dict]:
+        try:
+            d = float(delta)
+        except Exception:
+            self.logger.warning("Invalid stock delta: %s by chat_id=%s", delta, chat_id)
+            return 400, {"detail": "Amount must be a number"}
+
+        if d == 0:
+            self.logger.warning("Zero stock delta by chat_id=%s", chat_id)
+            return 400, {"detail": "Amount cannot be zero"}
+
+        status, res = await self.client.adjust_stock(chat_id, item_name, d)
+        self.logger.info(
+            "adjust_stock chat_id=%s item_name=%s delta=%s status=%s", chat_id, item_name, d, status
+        )
+        return status, res
+
+    async def create_expense(self, chat_id: int, category, amount, description: str | None = None) -> Tuple[int, dict]:
+        ok, normalized_category, a, error = validate_expense_input(category, amount)
+        if not ok:
+            self.logger.warning(
+                "Invalid expense input category=%s amount=%s by chat_id=%s", category, amount, chat_id
+            )
+            return 400, {"detail": error}
+
+        status, res = await self.client.create_expense(chat_id, normalized_category, a, description)
+        self.logger.info(
+            "create_expense chat_id=%s category=%s amount=%s status=%s", chat_id, normalized_category, a, status
         )
         return status, res
 
